@@ -2,26 +2,33 @@ import { prisma } from "@/lib/prisma";
 import { UpdateUserSchema } from "@/types/forms/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function PATCH(req: NextRequest, {params} : {
-	params: Promise<{userQrCode: string}>
-}) {
+export async function PATCH(
+	req: NextRequest,
+	{
+		params,
+	}: {
+		params: Promise<{ userQrCode: string }>;
+	}
+) {
 	try {
-		const {userQrCode} = await params;
+		const { userQrCode } = await params;
 
 		if (!userQrCode) {
 			console.log("Please provide QR Code.");
 			return NextResponse.json(
-				{ message: "Please provide QR Code."},
+				{ message: "Please provide QR Code." },
 				{ status: 400 }
 			);
 		}
 
-		const user = await prisma.user.findUnique({ where: { qrCode: userQrCode }})
+		const user = await prisma.user.findUnique({
+			where: { qrCode: userQrCode },
+		});
 
 		if (!user) {
 			console.log("User not found.");
 			return NextResponse.json(
-				{ message: "User not found."},
+				{ message: "User not found." },
 				{ status: 400 }
 			);
 		}
@@ -36,43 +43,30 @@ export async function PATCH(req: NextRequest, {params} : {
 			);
 		}
 		const {
-			dateHired,
 			firstName,
 			initName,
 			lastName,
-			permissions,
-			registeredDate,
-			role,
-			status,
 			suffixName,
+			roles,
+			status,
 			agency,
-			avatar,
-			companyName,
 			department,
+			companyName,
+			dateHired,
+			registeredDate,
+			avatar,
 			phoneNumber,
 		} = parsed.data;
 
-		/** Example Request Body
-     * {
-        "first_name": "Test1",
-        "last_name": "Ting2",
-        "email_address": [
-          "test.ting@gmail.com"
-        ],
-        "username": "testting123",
-        "password": "StrongTest431@12",
-        "public_metadata": {
-          "role": "ADMIN",
-          "permissions": ["VIEW", "ALL", "DELETE"]
-        }
-      }
-     */
+		const formattedRoles = roles?.map((role) => role.roleId);
+		console.log("UPDATE FORMAT ROLES", formattedRoles)
+
 		const reqNewUserClerkBody = {
 			first_name: firstName,
 			last_name: lastName,
 			public_metadata: {
-				role,
-				permissions,
+				roles: formattedRoles,
+				qrCode: userQrCode,
 			},
 		};
 
@@ -124,14 +118,17 @@ export async function PATCH(req: NextRequest, {params} : {
       "profile_image_url": "https://www.gravatar.com/avatar?d=mp"
       }
      */
-		const reqNewUserClerk = await fetch(`https://api.clerk.com/v1/users/${user.clerkUserId}`, {
-			method: "PATCH",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-			},
-			body: JSON.stringify(reqNewUserClerkBody),
-		});
+		const reqNewUserClerk = await fetch(
+			`https://api.clerk.com/v1/users/${user.clerkUserId}`,
+			{
+				method: "PATCH",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+				},
+				body: JSON.stringify(reqNewUserClerkBody),
+			}
+		);
 		const resNewUserClerk = await reqNewUserClerk.json();
 		if (resNewUserClerk.errors && resNewUserClerk.errors.length > 0) {
 			const errors = resNewUserClerk.errors;
@@ -163,16 +160,22 @@ export async function PATCH(req: NextRequest, {params} : {
 
 		const updateUser = await prisma.user.update({
 			where: {
-				clerkUserId: user.clerkUserId
+				clerkUserId: user.clerkUserId,
 			},
 			data: {
-				role,
 				status,
 				firstName,
 				initName,
 				lastName,
-				permissions,
 				suffixName,
+				userRole: {
+					deleteMany: {},
+					create: formattedRoles?.map((roleId) => ({
+						role: {
+							connect: { id: roleId },
+						},
+					})),
+				},
 				Profile: {
 					update: {
 						agency,
@@ -184,6 +187,7 @@ export async function PATCH(req: NextRequest, {params} : {
 						registeredDate,
 					},
 				},
+				// Update rolePermissions
 			},
 		});
 
@@ -193,7 +197,82 @@ export async function PATCH(req: NextRequest, {params} : {
 		);
 	} catch (error: any) {
 		return NextResponse.json(
-			{ message: "Failed to Update the User with Clerk Auth.", error: error.message },
+			{
+				message: "Failed to Update the User with Clerk Auth.",
+				error: error.message,
+			},
+			{ status: 500 }
+		);
+	}
+}
+
+export async function DELETE(
+	req: NextRequest,
+	{
+		params,
+	}: {
+		params: Promise<{ userQrCode: string }>;
+	}
+) {
+	try {
+		const { userQrCode } = await params;
+
+		const user = await prisma.user.findUnique({
+			where: { qrCode: userQrCode },
+		});
+
+		if (!user) {
+			console.log("User not found");
+			return NextResponse.json(
+				{ message: "User not found." },
+				{ status: 400 }
+			);
+		}
+
+		const reqNewUserClerk = await fetch(
+			`https://api.clerk.com/v1/users/${user.clerkUserId}`,
+			{
+				method: "DELETE",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+				},
+			}
+		);
+		const resNewUserClerk = await reqNewUserClerk.json();
+		if (resNewUserClerk.errors && resNewUserClerk.errors.length > 0) {
+			const errors = resNewUserClerk.errors;
+
+			if (errors.length === 1) {
+				const singleError = errors[0].long_message;
+				console.log(`Clerk error: ${singleError}`);
+
+				return NextResponse.json(
+					{
+						message: errors[0].long_message,
+					},
+					{ status: 400 }
+				);
+			} else {
+				errors.forEach((err: any) =>
+					console.log(`Clerk error: ${err.long_message}`)
+				);
+
+				return NextResponse.json(
+					{
+						message: "Please complete the required fields.",
+						errors: JSON.stringify(errors.toString()),
+					},
+					{ status: 400 }
+				);
+			}
+		}
+
+		return NextResponse.json(user, { status: 201 });
+	} catch (error) {
+		console.log("Failed to Delete User with Clerk Auth, " + error);
+		return NextResponse.json(
+			{ message: "Failed to Delete User with Clerk Auth." },
 			{ status: 500 }
 		);
 	}

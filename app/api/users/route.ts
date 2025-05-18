@@ -3,6 +3,25 @@ import { CreateUserSchema, UpdateUserSchema } from "@/types/forms/auth";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
+export async function GET() {
+	try {
+		const users = await prisma.user.findMany({
+			include: {
+				Profile: true,
+				userRole: true
+			}
+		})
+
+		return NextResponse.json(users);
+	} catch (error) {
+		console.log("Failed to Fetch Users. " + error)
+		return NextResponse.json(
+			{ message: "Failed to Fetch Users." + error},
+			{ status: 500 }
+		);
+	}
+}
+
 export async function POST(req: NextRequest) {
 	try {
 		const body = await req.json();
@@ -21,10 +40,9 @@ export async function POST(req: NextRequest) {
 			initName,
 			lastName,
 			password,
-			permissions,
+			roles,
 			qrCode,
 			registeredDate,
-			role,
 			status,
 			suffixName,
 			userName,
@@ -37,6 +55,24 @@ export async function POST(req: NextRequest) {
 
 		const salt = bcrypt.genSaltSync(10);
 		const hashedPassword = bcrypt.hashSync(password, salt);
+
+		const isQrCodeExistDB = await prisma.user.findUnique({
+			where: { qrCode },
+		});
+		if (isQrCodeExistDB?.qrCode === qrCode) {
+			console.log("QR Code already exist.");
+			return NextResponse.json(
+				{ message: "QR Code already exist." },
+				{ status: 400 }
+			);
+		}
+		if (isQrCodeExistDB?.userName === userName) {
+			console.log("Username already exist.");
+			return NextResponse.json(
+				{ message: "Username already exist." },
+				{ status: 400 }
+			);
+		}
 
 		/** Example Request Body
      * {
@@ -53,6 +89,9 @@ export async function POST(req: NextRequest) {
         }
       }
      */
+
+		const formattedRoles = roles.map((role) => role.roleId);
+
 		const reqNewUserClerkBody = {
 			first_name: firstName,
 			last_name: lastName,
@@ -60,8 +99,8 @@ export async function POST(req: NextRequest) {
 			username: userName,
 			password,
 			public_metadata: {
-				role,
-				permissions,
+				roles: formattedRoles,
+				qrCode
 			},
 		};
 
@@ -143,54 +182,39 @@ export async function POST(req: NextRequest) {
 				return NextResponse.json(
 					{
 						message: "Please complete the required fields.",
-						errors: errors.toString(),
+						errors: JSON.stringify(errors),
 					},
 					{ status: 400 }
 				);
 			}
 		}
 
-		const isQrCodeExistDB = await prisma.user.findUnique({
-			where: { qrCode },
-		});
-		if (isQrCodeExistDB?.qrCode === qrCode) {
-			console.log("QR Code already exist.");
-			return NextResponse.json(
-				{ message: "QR Code already exist." },
-				{ status: 400 }
-			);
-		}
-		if (isQrCodeExistDB?.userName === userName) {
-			console.log("Username already exist.");
-			return NextResponse.json(
-				{ message: "Username already exist." },
-				{ status: 400 }
-			);
-		}
-
 		const newUser = await prisma.user.create({
 			data: {
 				qrCode,
 				clerkUserId: resNewUserClerk.id,
-				role,
 				status,
 				email,
 				firstName,
 				initName,
 				lastName,
 				password: hashedPassword,
-				permissions,
 				suffixName,
 				userName,
+				userRole: {
+					createMany: {
+						data: roles
+					}
+				},
 				Profile: {
 					create: {
 						agency,
 						companyName,
 						avatar,
-						dateHired,
+						dateHired: new Date(dateHired),
 						department,
 						phoneNumber,
-						registeredDate,
+						registeredDate: new Date(registeredDate),
 					},
 				},
 			},
@@ -201,8 +225,9 @@ export async function POST(req: NextRequest) {
 			{ status: 201 }
 		);
 	} catch (error) {
+		console.log("Failed to Create User with Clerk Auth, " + error)
 		return NextResponse.json(
-			{ message: "Failed to Create User with Clerk Auth." },
+			{ message: "Failed to Create User with Clerk Auth." + error },
 			{ status: 500 }
 		);
 	}

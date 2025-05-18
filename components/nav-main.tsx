@@ -23,6 +23,11 @@ const items = [
 		icon: ChartLineIcon,
 	},
 	{
+		title: "Users",
+		url: "/dashboard/users",
+		icon: ChartLineIcon,
+	},
+	{
 		title: "Employees",
 		url: "/dashboard/employees",
 		icon: UsersIcon,

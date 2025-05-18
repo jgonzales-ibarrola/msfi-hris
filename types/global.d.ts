@@ -1,12 +1,12 @@
-import { Role } from "@prisma/client"
+import { Permissions, Role } from "@prisma/client"
 
 export {}
 
 declare global {
   interface CustomJwtSessionClaims {
     metadata: {
-      role: Role,
-      permissions: string[]
+      qrCode: string,
+      roles: string[],
     }
   }
 }

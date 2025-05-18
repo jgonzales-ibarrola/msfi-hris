@@ -29,20 +29,27 @@ model User {
   lastName    String?
   initName    String?
   suffixName  String?
-  role        Role
-  permissions String[]
   status      String
   password    String?
   qrCode      String   @unique
   Profile     Profile?
+
+  userRole UserRole[]
 }
 
-enum Role {
-  ADMIN
-  HUMAN_RESOURCE
-  SECURITY_OFFICER
-  SECURITY_GUARD
-  EMPLOYEE
-  SUPPLIER
-  VISITOR
+model Role {
+  id          String   @id @unique @default(cuid())
+  name String
+  description String
+
+  userRole UserRole[]
+}
+
+model UserRole {
+  id          String   @id @unique @default(cuid())
+  roleId String
+  userId String
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
